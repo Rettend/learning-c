@@ -1,11 +1,10 @@
-#include <errno.h>
+#include "utils.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-// Task struct with bit fields
 typedef struct {
   unsigned int is_active : 1; // 0-1
   unsigned int priority : 2;  // 0-3
@@ -14,28 +13,24 @@ typedef struct {
   unsigned int user_id : 16;  // 0-65535
 } Task;
 
-// Function prototypes
-Task read_task_from_stdin(void);
+int read_task_from_stdin(void);
 void display_task(const Task *task);
 int save_task(const Task *task);
 int load_task(Task *task);
 int list_tasks(void);
-void print_help(void);
+int print_help(void);
 int quit_program(void);
 
-// Command operation structure
 typedef struct {
   int (*operation)(void);
   const char *name;
   const char *description;
 } CommandOperation;
 
-// Global task storage for simplicity
 static Task current_task;
-static const char *DEFAULT_FILENAME = "tasks.bin";
+static const char *FILENAME = "src/08a.bin";
 
-// Function implementations
-Task read_task_from_stdin(void) {
+int read_task_from_stdin(void) {
   Task task = {0};
   unsigned int temp;
 
@@ -61,9 +56,13 @@ Task read_task_from_stdin(void) {
   scanf("%u", &temp);
   task.user_id = temp & 65535;
 
+  int c;
+  while ((c = getchar()) != '\n' && c != EOF)
+    ;
+
   current_task = task;
   printf("Task created successfully!\n");
-  return task;
+  return 1;
 }
 
 void display_task(const Task *task) {
@@ -77,86 +76,72 @@ void display_task(const Task *task) {
 }
 
 int save_task(const Task *task) {
-  int fd = open(DEFAULT_FILENAME, O_WRONLY | O_CREAT | O_APPEND, 0644);
-  if (fd < 0) {
-    printf("Error opening file for writing: %s\n", strerror(errno));
-    return 0;
-  }
-
-  if (write(fd, task, sizeof(Task)) != sizeof(Task)) {
-    printf("Error writing to file: %s\n", strerror(errno));
-    close(fd);
-    return 0;
-  }
-
-  close(fd);
-  printf("Task saved to %s\n", DEFAULT_FILENAME);
+  int fd = openCheck(FILENAME, O_WRONLY | O_CREAT | O_APPEND, 0644);
+  writeCheck(fd, task, sizeof(Task));
+  closeCheck(fd);
+  printf("Task saved to %s\n", FILENAME);
   return 1;
 }
 
 int load_task(Task *task) {
-  int fd = open(DEFAULT_FILENAME, O_RDONLY);
+  int fd = open(FILENAME, O_RDONLY, 0);
   if (fd < 0) {
-    printf("Error opening file for reading: %s\n", strerror(errno));
+    printf("Cannot load task: File not found or cannot be opened\n");
     return 0;
   }
 
-  off_t file_size = lseek(fd, 0, SEEK_END);
+  off_t file_size = lseekCheck(fd, 0, SEEK_END);
   if (file_size < (off_t)sizeof(Task)) {
     printf("File is too small or empty\n");
-    close(fd);
+    closeCheck(fd);
     return 0;
   }
 
   // Go back to the beginning and read the last task
   off_t offset = file_size - sizeof(Task);
-  lseek(fd, offset, SEEK_SET);
-
-  if (read(fd, task, sizeof(Task)) != sizeof(Task)) {
-    printf("Error reading from file: %s\n", strerror(errno));
-    close(fd);
-    return 0;
-  }
+  lseekCheck(fd, offset, SEEK_SET);
+  readCheck(fd, task, sizeof(Task));
 
   current_task = *task;
-  close(fd);
-  printf("Task loaded from %s\n", DEFAULT_FILENAME);
+  closeCheck(fd);
+  printf("Task loaded from %s\n", FILENAME);
   return 1;
 }
 
 int list_tasks(void) {
-  int fd = open(DEFAULT_FILENAME, O_RDONLY);
+  int fd = open(FILENAME, O_RDONLY, 0);
   if (fd < 0) {
-    printf("Error opening file for reading: %s\n", strerror(errno));
+    printf("No tasks file found or cannot be opened: %s\n", strerror(errno));
     return 0;
   }
 
-  off_t file_size = lseek(fd, 0, SEEK_END);
+  off_t file_size = lseekCheck(fd, 0, SEEK_END);
   int task_count = file_size / sizeof(Task);
 
   if (task_count == 0) {
     printf("No tasks found in file\n");
-    close(fd);
+    closeCheck(fd);
     return 0;
   }
 
   printf("Found %d task(s) in file:\n\n", task_count);
 
-  lseek(fd, 0, SEEK_SET); // Go back to beginning
+  lseekCheck(fd, 0, SEEK_SET); // Go back to beginning
   Task task;
   int index = 0;
 
-  while (read(fd, &task, sizeof(Task)) == sizeof(Task)) {
+  for (int i = 0; i < task_count; i++) {
+    readCheck(fd, &task, sizeof(Task));
     printf("Task #%d:\n", ++index);
     display_task(&task);
     printf("\n");
   }
 
-  close(fd);
+  closeCheck(fd);
   return 1;
 }
 
-void print_help(void) {
+int print_help(void) {
   printf("Task Manager Commands:\n");
   printf("  c - Create new task\n");
   printf("  d - Display current task\n");
@@ -165,49 +150,49 @@ void print_help(void) {
   printf("  a - List all tasks\n");
   printf("  h - Help\n");
   printf("  q - Quit\n");
-  return;
+  return 1;
 }
 
 int quit_program(void) {
   printf("Goodbye!\n");
   exit(0);
-  return 1; // Never reached
+  return 1;
 }
 
-// Command lookup table
+int display_current_task(void) {
+  display_task(&current_task);
+  return 1;
+}
+
+int save_current_task(void) { return save_task(&current_task); }
+
+int load_current_task(void) { return load_task(&current_task); }
+
 static const CommandOperation commands[] = {
-    ['c'] = {(int (*)(void))read_task_from_stdin, "Create",
-             "Create a new task"},
-    ['d'] = {(int (*)(void))display_task, "Display", "Display current task"},
-    ['s'] = {(int (*)(void))save_task, "Save", "Save task to file"},
-    ['l'] = {(int (*)(void))load_task, "Load", "Load task from file"},
+    ['c'] = {read_task_from_stdin, "Create", "Create a new task"},
+    ['d'] = {display_current_task, "Display", "Display current task"},
+    ['s'] = {save_current_task, "Save", "Save task to file"},
+    ['l'] = {load_current_task, "Load", "Load task from file"},
     ['a'] = {list_tasks, "List", "List all tasks"},
-    ['h'] = {(int (*)(void))print_help, "Help", "Display help"},
+    ['h'] = {print_help, "Help", "Display help"},
     ['q'] = {quit_program, "Quit", "Exit the program"},
 };
 
 int main(void) {
   char choice;
 
-  printf("Task Manager - Bit Fields Demo\n");
+  printf("-- Task Manager --\n");
   print_help();
 
-  // Initialize default task
   current_task = (Task){1, 1, 1, 1, 1};
 
   while (1) {
     printf("\nEnter command (h for help): ");
     scanf(" %c", &choice);
 
-    // Look up the command in our table
     if (choice >= 0 && choice < (int)sizeof(commands) / sizeof(commands[0]) &&
         commands[(int)choice].operation != NULL) {
-      if (choice == 'd') {
-        display_task(
-            &current_task); // Special case for display which needs a pointer
-      } else {
-        commands[(int)choice].operation();
-      }
+      commands[(int)choice].operation();
     } else {
       printf("Unknown command: %c\n", choice);
       print_help();
