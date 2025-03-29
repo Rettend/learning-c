@@ -6,7 +6,7 @@
       "type": "shell",
       "command": "clang",
       "args": [
-        "-std=c11",
+        "-std=c2x",
         "-g",
         "${file}",
         "-o",
@@ -24,7 +24,7 @@
       },
       "windows": {
         "args": [
-          "-std=c11",
+          "-std=c2x",
           "-g",
           "${file}",
           "-o",
