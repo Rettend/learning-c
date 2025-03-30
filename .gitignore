@@ -5,6 +5,7 @@
 __pycache__
 node_modules
 *.class
+*.bin
 
 # Based on https://raw.githubusercontent.com/github/gitignore/main/Node.gitignore
 
